@@ -1,0 +1,84 @@
+python 
+import yfinance as yf 
+import requests 
+from telegram import Update 
+from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, ConversationHandler 
+from telegram.ext import CallbackQueryHandler, MessageHandler, Filters 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup 
+ 
+# Глобальные переменные 
+investment_amount = None 
+ 
+# Функция для получения данных о ценах акций 
+def get_stock_data(stock_symbol): 
+    stock_data = yf.download(stock_symbol, start="2022-01-01", end="2022-12-31") 
+    return stock_data 
+ 
+# Функция для имитации инвестирования 
+def simulate_investment(stock_data, initial_investment): 
+    stock_data['Price Change'] = stock_data['Close'].pct_change() 
+    investment_value = initial_investment * (1 + stock_data['Price Change']).cumprod() 
+    return investment_value 
+ 
+# Функция для получения списка самых популярных бумаг 
+def get_popular_stocks(): 
+    url = "https://www.alphavantage.co/query?function=LISTING_STATUS&apikey=6630092601:AAE6UYMTLEiS3QvuJQ4lSEzU6KLBnxWFCFk" 
+    response = requests.get(url) 
+    data = response.json() 
+    popular_stocks = [stock['symbol'] for stock in data['data']] 
+    return popular_stocks 
+ 
+# Команда /start 
+def start(update: Update, context: CallbackContext) -> int: 
+    popular_stocks = get_popular_stocks() 
+    keyboard = [] 
+    for stock_symbol in popular_stocks: 
+        keyboard.append([InlineKeyboardButton(stock_symbol, callback_data=stock_symbol)]) 
+    reply_markup = InlineKeyboardMarkup(keyboard) 
+    update.message.reply_text('Выберите акцию для инвестирования:', reply_markup=reply_markup) 
+    return 1 
+ 
+# Обработка выбора акции 
+def invest(update: Update, context: CallbackContext) -> int: 
+    global investment_amount 
+    query = update.callback_query 
+    stock_symbol = query.data 
+    query.edit_message_text(text=f"Вы выбрали акцию {stock_symbol}. Введите сумму для инвестирования:") 
+    return 2 
+ 
+# Обработка введенной суммы для инвестирования 
+def set_investment_amount(update: Update, context: CallbackContext) -> int: 
+    global investment_amount 
+    investment_amount = float(update.message.text) 
+    update.message.reply_text(f"Вы вложили {investment_amount} рублей. Начинаем инвестирование!") 
+    stock_data = get_stock_data(context.user_data['selected_stock']) 
+    investment_value = simulate_investment(stock_data, investment_amount) 
+    update.message.reply_text(f"Значение вашего инвестиции: {investment_value}") 
+    return ConversationHandler.END 
+ 
+# Команда /invest 
+def invest_amount(update: Update, context: CallbackContext) -> None: 
+    update.message.reply_text("Для начала инвестиций нажмите /start.") 
+ 
+def main(): 
+    updater = Updater("6630092601:AAE6UYMTLEiS3QvuJQ4lSEzU6KLBnxWFCFk", use_context=True) 
+ 
+    dp = updater.dispatcher 
+ 
+    conv_handler = ConversationHandler( 
+        entry_points=[CommandHandler('start', start)], 
+        states={ 
+            1: [CallbackQueryHandler(invest)], 
+            2: [MessageHandler(Filters.text & ~Filters.command, set_investment_amount)] 
+        }, 
+        fallbacks=[CommandHandler('start', start)] 
+    ) 
+ 
+    dp.add_handler(conv_handler) 
+    dp.add_handler(CommandHandler('invest', invest_amount)) 
+ 
+    updater.start_polling() 
+    updater.idle() 
+ 
+if name == 'main': 
+    main()
